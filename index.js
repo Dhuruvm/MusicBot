@@ -25,10 +25,10 @@ setTimeout(() => {
         nodes: [
             {
                 authorization: process.env.LAVALINK_PASSWORD || "youshallnotpass",
-                host: process.env.LAVALINK_HOST || "localhost",
+                host: (process.env.LAVALINK_HOST || "localhost").replace(/^https?:\/\//, ''),
                 port: parseInt(process.env.LAVALINK_PORT) || 2333,
                 id: "main-node",
-                secure: process.env.LAVALINK_SECURE === "true"
+                secure: process.env.LAVALINK_SECURE === "true" || (process.env.LAVALINK_HOST && process.env.LAVALINK_HOST.startsWith('https'))
             }
         ],
         sendToShard: (guildId, payload) => {
@@ -61,7 +61,6 @@ setTimeout(() => {
         },
         queueOptions: {
             maxPreviousTracks: 25,
-            queueStore: new Map(),
             queueChangesWatcher: null
         },
         linksAllowed: true,

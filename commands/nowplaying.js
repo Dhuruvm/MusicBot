@@ -5,7 +5,7 @@ const LanguageManager = require('../src/LanguageManager');
 const COMPONENTS_V2_FLAG = 1 << 15;
 
 module.exports = {
-    data: SlashCommandBuilder()
+    data: new SlashCommandBuilder()
         .setName('nowplaying')
         .setDescription('Shows information about currently playing song'),
 
