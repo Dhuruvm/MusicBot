@@ -128,10 +128,7 @@ setTimeout(() => {
     const client = new Client({
         intents: [
             GatewayIntentBits.Guilds,
-            GatewayIntentBits.GuildMessages,
-            GatewayIntentBits.MessageContent,
             GatewayIntentBits.GuildVoiceStates,
-            GatewayIntentBits.GuildMembers,
         ]
         // ShardingManager automatically sets shard ID and count via environment variables
         // No need to specify shards/shardCount here - they are auto-injected
