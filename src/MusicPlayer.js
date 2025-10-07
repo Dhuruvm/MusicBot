@@ -42,10 +42,10 @@ class MusicPlayer {
             instaUpdateFiltersFix: true,
             applyVolumeAsFilter: false
         });
-
-        this.setupPlayerEvents();
         
         await this.player.connect();
+        
+        this.setupPlayerEvents();
         
         return this.player;
     }
