@@ -13,6 +13,8 @@ setTimeout(() => {
         intents: [
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildVoiceStates,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.MessageContent,
         ]
     });
 
@@ -190,6 +192,214 @@ setTimeout(() => {
             } else {
                 await interaction.reply({ content: errorMessage, ephemeral: true });
             }
+        }
+    });
+
+    client.on(Events.MessageCreate, async (message) => {
+        if (message.author.bot) return;
+        if (!message.guild) return;
+
+        const mentionRegex = new RegExp(`^<@!?${client.user.id}>`);
+        if (!mentionRegex.test(message.content)) return;
+
+        const args = message.content.replace(mentionRegex, '').trim().split(/\s+/);
+        const commandName = args.shift()?.toLowerCase();
+
+        if (!commandName) {
+            return message.reply('👋 Hey! Use `@bot p <song>` to play music or `@bot help` for all commands!');
+        }
+
+        try {
+            const MusicPlayer = require('./src/MusicPlayer');
+            const COMPONENTS_V2_FLAG = 1 << 15;
+
+            switch (commandName) {
+                case 'p':
+                case 'play':
+                    if (args.length === 0) {
+                        return message.reply('❌ Please provide a song name or URL! Example: `@bot p Gata Only`');
+                    }
+
+                    if (!message.member.voice.channel) {
+                        return message.reply('❌ You need to be in a voice channel to play music!');
+                    }
+
+                    const query = args.join(' ');
+                    let player = client.players.get(message.guild.id);
+                    
+                    if (!player) {
+                        player = new MusicPlayer(message.guild, message.channel, message.member.voice.channel, client.lavalink);
+                        client.players.set(message.guild.id, player);
+                    }
+
+                    player.voiceChannel = message.member.voice.channel;
+                    player.textChannel = message.channel;
+
+                    await message.reply(`🔍 Searching for: **${query}**...`);
+
+                    const result = await player.play(query, message.author);
+
+                    if (!result.success) {
+                        return message.channel.send(`❌ ${result.message}`);
+                    }
+
+                    if (result.type === 'playlist') {
+                        const components = [{
+                            type: 17,
+                            color: 0x5865F2,
+                            components: [
+                                { type: 10, content: `✅ **Playlist Added**` },
+                                { type: 10, content: `📋 **${result.playlistName}**` },
+                                { type: 10, content: `🎵 Added **${result.trackCount}** tracks to the queue` }
+                            ]
+                        }];
+                        await message.channel.send({ flags: COMPONENTS_V2_FLAG, components });
+                    } else {
+                        const track = result.track;
+                        const components = [{
+                            type: 17,
+                            color: 0x5865F2,
+                            components: [
+                                { type: 10, content: `✅ **Added to Queue**` },
+                                { type: 10, content: `🎵 **${track.info.title}**` },
+                                { type: 10, content: `👤 ${track.info.author}` }
+                            ]
+                        }];
+                        await message.channel.send({ flags: COMPONENTS_V2_FLAG, components });
+                    }
+
+                    if (client.musicEmbedManager) {
+                        await client.musicEmbedManager.updateNowPlayingEmbed(player);
+                    }
+                    break;
+
+                case 'np':
+                case 'nowplaying':
+                    const npPlayer = client.players.get(message.guild.id);
+                    if (!npPlayer || !npPlayer.currentTrack) {
+                        return message.reply('❌ No music is currently playing!');
+                    }
+
+                    const track = npPlayer.currentTrack;
+                    const currentTime = npPlayer.getCurrentTime();
+                    const progressBar = npPlayer.getProgressBar ? npPlayer.getProgressBar(currentTime, track.info.duration) : '▬▬▬▬▬▬▬▬▬▬';
+                    
+                    const components = [{
+                        type: 17,
+                        color: 0x5865F2,
+                        components: [
+                            { type: 10, content: `🎵 **Now Playing**` },
+                            { type: 14, spacing_size: 1 },
+                            { type: 10, content: `**${track.info.title}**` },
+                            { type: 10, content: `👤 ${track.info.author}` },
+                            { type: 14, spacing_size: 1 },
+                            { type: 10, content: progressBar },
+                            { type: 10, content: `⏱️ ${npPlayer.formatTime ? npPlayer.formatTime(currentTime) : '0:00'} / ${npPlayer.formatTime ? npPlayer.formatTime(track.info.duration) : '0:00'}` }
+                        ]
+                    }];
+
+                    await message.reply({ flags: COMPONENTS_V2_FLAG, components });
+                    break;
+
+                case 'skip':
+                    const skipPlayer = client.players.get(message.guild.id);
+                    if (!skipPlayer) {
+                        return message.reply('❌ No music is currently playing!');
+                    }
+
+                    if (!message.member.voice.channel || skipPlayer.voiceChannel.id !== message.member.voice.channel.id) {
+                        return message.reply('❌ You need to be in the same voice channel!');
+                    }
+
+                    if (skipPlayer.queue.length === 0) {
+                        return message.reply('❌ No tracks in queue to skip to!');
+                    }
+
+                    const skippedTrack = skipPlayer.currentTrack;
+                    await skipPlayer.skip();
+                    await message.reply(`⏭️ Skipped **${skippedTrack?.info?.title || 'track'}**!`);
+                    break;
+
+                case 'stop':
+                    const stopPlayer = client.players.get(message.guild.id);
+                    if (!stopPlayer) {
+                        return message.reply('❌ No music is currently playing!');
+                    }
+
+                    if (!message.member.voice.channel || stopPlayer.voiceChannel.id !== message.member.voice.channel.id) {
+                        return message.reply('❌ You need to be in the same voice channel!');
+                    }
+
+                    await stopPlayer.stop();
+                    client.players.delete(message.guild.id);
+                    await message.reply('⏹️ Stopped playback and cleared the queue!');
+                    break;
+
+                case 'pause':
+                    const pausePlayer = client.players.get(message.guild.id);
+                    if (!pausePlayer) {
+                        return message.reply('❌ No music is currently playing!');
+                    }
+
+                    if (!message.member.voice.channel || pausePlayer.voiceChannel.id !== message.member.voice.channel.id) {
+                        return message.reply('❌ You need to be in the same voice channel!');
+                    }
+
+                    if (pausePlayer.paused) {
+                        pausePlayer.resume();
+                        await message.reply('▶️ Resumed playback!');
+                    } else {
+                        pausePlayer.pause();
+                        await message.reply('⏸️ Paused playback!');
+                    }
+
+                    if (client.musicEmbedManager) {
+                        await client.musicEmbedManager.updateNowPlayingEmbed(pausePlayer);
+                    }
+                    break;
+
+                case 'queue':
+                case 'q':
+                    const queuePlayer = client.players.get(message.guild.id);
+                    if (!queuePlayer) {
+                        return message.reply('❌ No music is currently playing!');
+                    }
+
+                    const queueComponents = client.musicEmbedManager.createQueueDisplay(queuePlayer, 0);
+                    await message.reply({ flags: COMPONENTS_V2_FLAG, components: queueComponents });
+                    break;
+
+                case 'help':
+                case 'h':
+                    const helpComponents = [{
+                        type: 17,
+                        color: 0x5865F2,
+                        components: [
+                            { type: 10, content: `🎵 **Music Bot Commands**` },
+                            { type: 14, spacing_size: 2 },
+                            { type: 10, content: `**Playing Music:**` },
+                            { type: 10, content: `\`@bot p <song>\` - Play a song` },
+                            { type: 10, content: `\`@bot np\` - Show now playing` },
+                            { type: 10, content: `\`@bot queue\` - Show queue` },
+                            { type: 14, spacing_size: 1 },
+                            { type: 10, content: `**Controls:**` },
+                            { type: 10, content: `\`@bot pause\` - Pause/Resume` },
+                            { type: 10, content: `\`@bot skip\` - Skip current song` },
+                            { type: 10, content: `\`@bot stop\` - Stop and clear queue` },
+                            { type: 14, spacing_size: 1 },
+                            { type: 10, content: `**Platforms:** YouTube, Spotify, SoundCloud` },
+                            { type: 10, content: `_You can also use slash commands like /play_` }
+                        ]
+                    }];
+                    await message.reply({ flags: COMPONENTS_V2_FLAG, components: helpComponents });
+                    break;
+
+                default:
+                    await message.reply(`❌ Unknown command: \`${commandName}\`\nUse \`@bot help\` to see available commands!`);
+            }
+        } catch (error) {
+            console.error(chalk.red('❌ Error executing message command:'), error);
+            await message.reply('❌ An error occurred while executing that command!');
         }
     });
 
