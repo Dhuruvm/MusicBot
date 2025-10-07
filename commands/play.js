@@ -56,7 +56,7 @@ module.exports = {
             if (result.type === 'playlist') {
                 const components = [
                     {
-                        type: 15,
+                        type: 17,
                         color: 0x5865F2,
                         components: [
                             {
@@ -84,7 +84,7 @@ module.exports = {
                 const track = result.track;
                 const components = [
                     {
-                        type: 15,
+                        type: 17,
                         color: 0x5865F2,
                         components: [
                             {

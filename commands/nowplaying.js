@@ -1,9 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
 const LanguageManager = require('../src/LanguageManager');
 
+const COMPONENTS_V2_FLAG = 1 << 15;
+
 module.exports = {
-    data: new SlashCommandBuilder()
+    data: SlashCommandBuilder()
         .setName('nowplaying')
         .setDescription('Shows information about currently playing song'),
 
@@ -12,12 +14,11 @@ module.exports = {
             const guild = interaction.guild;
             const guildId = guild.id;
 
-            // Get music player
             const player = client.players.get(guild.id);
             if (!player) {
                 const noPlayerMsg = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.no_player');
                 return await interaction.reply({
-                    embeds: [await this.createErrorEmbed(noPlayerMsg, guildId)],
+                    content: `❌ ${noPlayerMsg || 'No music is currently playing!'}`,
                     ephemeral: true
                 });
             }
@@ -25,7 +26,7 @@ module.exports = {
             if (!player.currentTrack) {
                 const noTrackMsg = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.no_track');
                 return await interaction.reply({
-                    embeds: [await this.createErrorEmbed(noTrackMsg, guildId)],
+                    content: `❌ ${noTrackMsg || 'No track is currently playing!'}`,
                     ephemeral: true
                 });
             }
@@ -34,10 +35,8 @@ module.exports = {
             const currentTime = player.getCurrentTime();
             const status = player.getStatus();
 
-            // Get translations
             const title = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.title');
             const artistLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.artist');
-            const albumLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.album');
             const platformLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.platform');
             const platformCode = (track.platform || 'unknown').toString().toLowerCase();
             const platformNameKey = `commands.nowplaying.platform_name_${platformCode}`;
@@ -53,60 +52,7 @@ module.exports = {
                 }
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(`**[${track.title}](${track.url})**`)
-                .setColor(config.bot.embedColor)
-                .setTimestamp();
-
-            // Add track info fields
-            if (track.artist) {
-                embed.addFields({
-                    name: artistLabel,
-                    value: track.artist,
-                    inline: true
-                });
-            }
-
-            if (track.album) {
-                embed.addFields({
-                    name: albumLabel,
-                    value: track.album,
-                    inline: true
-                });
-            }
-
-            embed.addFields({
-                name: platformLabel,
-                value: `${this.getPlatformEmoji(platformCode)} ${platformName}`,
-                inline: true
-            });
-
-            // Duration and progress
-            if (track.duration && track.duration > 0) {
-                const progressLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.progress');
-                const progressBar = this.createProgressBar(currentTime, track.duration * 1000);
-                const currentTimeFormatted = this.formatTime(currentTime);
-                const totalTimeFormatted = this.formatDuration(track.duration);
-
-                embed.addFields({
-                    name: progressLabel,
-                    value: `${currentTimeFormatted} / ${totalTimeFormatted}\n${progressBar}`,
-                    inline: false
-                });
-            }
-
-            // Requester info
-            if (track.requestedBy) {
-                const requestedByLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.requested_by');
-                embed.addFields({
-                    name: requestedByLabel,
-                    value: `<@${track.requestedBy.id}>`,
-                    inline: true
-                });
-            }
-
-            // Player status
+            const progressLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.progress');
             const statusLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.status');
             const statusPlaying = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.status_playing');
             const statusPaused = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.status_paused');
@@ -142,67 +88,165 @@ module.exports = {
                 statusText += ` • ${shuffleText}`;
             }
 
-            embed.addFields({
-                name: statusLabel,
-                value: statusText,
-                inline: false
+            const containerComponents = [
+                {
+                    type: 10,
+                    content: `**${title || 'Now Playing'}**`
+                },
+                {
+                    type: 14,
+                    spacing_size: 1
+                },
+                {
+                    type: 10,
+                    content: `🎵 **[${track.title}](${track.url})**`
+                }
+            ];
+
+            if (track.artist) {
+                containerComponents.push({
+                    type: 10,
+                    content: `${artistLabel || 'Artist'}: ${track.artist}`
+                });
+            }
+
+            if (track.album) {
+                const albumLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.album');
+                containerComponents.push({
+                    type: 10,
+                    content: `${albumLabel || 'Album'}: ${track.album}`
+                });
+            }
+
+            containerComponents.push({
+                type: 10,
+                content: `${platformLabel || 'Platform'}: ${this.getPlatformEmoji(platformCode)} ${platformName}`
             });
 
-            // Queue info
+            if (track.duration && track.duration > 0) {
+                const progressBar = this.createProgressBar(currentTime, track.duration * 1000);
+                const currentTimeFormatted = this.formatTime(currentTime);
+                const totalTimeFormatted = this.formatDuration(track.duration);
+
+                containerComponents.push(
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: `**${progressLabel || 'Progress'}**`
+                    },
+                    {
+                        type: 10,
+                        content: `${currentTimeFormatted} / ${totalTimeFormatted}`
+                    },
+                    {
+                        type: 10,
+                        content: progressBar
+                    }
+                );
+            }
+
+            if (track.requestedBy) {
+                const requestedByLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.requested_by');
+                containerComponents.push(
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: `${requestedByLabel || 'Requested by'}: <@${track.requestedBy.id}>`
+                    }
+                );
+            }
+
+            containerComponents.push(
+                {
+                    type: 14,
+                    spacing_size: 1
+                },
+                {
+                    type: 10,
+                    content: `**${statusLabel || 'Status'}**`
+                },
+                {
+                    type: 10,
+                    content: statusText
+                }
+            );
+
             if (player.queue.length > 0) {
                 const nextSongLabel = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.next_song');
                 const footerMoreSongs = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.footer_more_songs', { count: player.queue.length });
 
-                embed.addFields({
-                    name: nextSongLabel,
-                    value: `[${player.queue[0].title}](${player.queue[0].url})`,
-                    inline: false
-                });
-
-                embed.setFooter({
-                    text: footerMoreSongs
-                });
+                containerComponents.push(
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: `**${nextSongLabel || 'Next Song'}**`
+                    },
+                    {
+                        type: 10,
+                        content: `[${player.queue[0].title}](${player.queue[0].url})`
+                    },
+                    {
+                        type: 10,
+                        content: `_${footerMoreSongs || `${player.queue.length} more songs in queue`}_`
+                    }
+                );
             } else {
                 const footerNoSongs = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.footer_no_songs');
-                embed.setFooter({
-                    text: footerNoSongs
+                containerComponents.push(
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: `_${footerNoSongs || 'No more songs in queue'}_`
+                    }
+                );
+            }
+
+            if (track.thumbnail) {
+                containerComponents.splice(2, 0, {
+                    type: 11,
+                    url: track.thumbnail
                 });
             }
 
-            // Add thumbnail
-            if (track.thumbnail) {
-                embed.setThumbnail(track.thumbnail);
-            }
-
-          
+            const components = [
+                {
+                    type: 17,
+                    color: this.hexToInt(config.bot.embedColor),
+                    components: containerComponents
+                }
+            ];
 
             await interaction.reply({
-                embeds: [embed]
+                flags: COMPONENTS_V2_FLAG,
+                components: components
             });
 
         } catch (error) {
+            console.error('Error in nowplaying command:', error);
             const guildId = interaction.guild.id;
             const errorMsg = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.error_getting_info');
             await interaction.reply({
-                embeds: [await this.createErrorEmbed(errorMsg, guildId)],
+                content: `❌ ${errorMsg || 'An error occurred while getting track info!'}`,
                 ephemeral: true
             });
         }
     },
 
-    async createErrorEmbed(message, guildId) {
-        const errorTitle = await LanguageManager.getTranslation(guildId, 'commands.nowplaying.error_title');
-        return new EmbedBuilder()
-            .setTitle(errorTitle)
-            .setDescription(message)
-            .setColor('#FF0000')
-            .setTimestamp();
-    },
-
     formatDuration(seconds) {
         if (!seconds || seconds === 0) return '0:00';
 
-        // Ensure we work with integers to avoid floating point errors
         const totalSeconds = Math.floor(Number(seconds) || 0);
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -249,5 +293,9 @@ module.exports = {
             direct: '🔗'
         };
         return emojis[platform] || '🎵';
+    },
+
+    hexToInt(hex) {
+        return parseInt(hex.replace('#', ''), 16);
     }
 };

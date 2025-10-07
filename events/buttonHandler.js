@@ -407,7 +407,7 @@ module.exports = {
 
             const components = [
                 {
-                    type: 15,
+                    type: 17,
                     color: 0x5865F2,
                     components: [
                         {

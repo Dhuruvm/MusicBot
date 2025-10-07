@@ -1,6 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config');
 const LanguageManager = require('../src/LanguageManager');
+
+const COMPONENTS_V2_FLAG = 1 << 15;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,7 +13,6 @@ module.exports = {
         try {
             const guildId = interaction.guild.id;
 
-            // Get translations
             const t = {
                 title: await LanguageManager.getTranslation(guildId, 'commands.help.title'),
                 description: await LanguageManager.getTranslation(guildId, 'commands.help.main_description'),
@@ -33,76 +34,27 @@ module.exports = {
                 buttonRefresh: await LanguageManager.getTranslation(guildId, 'commands.help.button_refresh')
             };
 
-            const embed = new EmbedBuilder()
-                .setTitle(t.title)
-                .setDescription(t.description)
-                .setColor(config.bot.embedColor)
-                .setThumbnail(client.user.displayAvatarURL())
-                .setTimestamp();
-
-            // Commands
-            embed.addFields({
-                name: t.commandsTitle,
-                value: Array.isArray(t.commandsList) ? t.commandsList.join('\n') : t.commandsList,
-                inline: false
-            });
-
-            // Button Controls
-            embed.addFields({
-                name: t.buttonControlsTitle,
-                value: Array.isArray(t.buttonControlsList) ? t.buttonControlsList.join('\n') : t.buttonControlsList,
-                inline: false
-            });
-
-            // Supported Platforms
-            embed.addFields({
-                name: t.platformsTitle,
-                value: Array.isArray(t.platformsList) ? t.platformsList.join('\n') : t.platformsList,
-                inline: false
-            });
-
-            // Features
-            embed.addFields({
-                name: t.featuresTitle,
-                value: Array.isArray(t.featuresList) ? t.featuresList.join('\n') : t.featuresList,
-                inline: false
-            });
-
-            // How to Use
-            embed.addFields({
-                name: t.howtoTitle,
-                value: Array.isArray(t.howtoList) ? t.howtoList.join('\n') : t.howtoList,
-                inline: false
-            });
-
-            // Statistics - Fetch from all shards if sharding is enabled
             let guilds, users, activeServers;
 
             if (client.shard) {
-                // Sharding is enabled - fetch from all shards
                 try {
-                    // Fetch guild counts from all shards
                     const guildCounts = await client.shard.fetchClientValues('guilds.cache.size');
                     guilds = guildCounts.reduce((acc, count) => acc + count, 0);
 
-                    // Fetch member counts from all shards
                     const memberCounts = await client.shard.broadcastEval(c => 
                         c.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)
                     );
                     users = memberCounts.reduce((acc, count) => acc + count, 0);
 
-                    // Fetch active players from all shards
                     const activePlayers = await client.shard.broadcastEval(c => c.players.size);
                     activeServers = activePlayers.reduce((acc, count) => acc + count, 0);
                 } catch (error) {
                     console.error('Error fetching shard statistics:', error);
-                    // Fallback to local shard data
                     guilds = client.guilds.cache.size;
                     users = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
                     activeServers = client.players.size;
                 }
             } else {
-                // No sharding - use local data
                 guilds = client.guilds.cache.size;
                 users = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
                 activeServers = client.players.size;
@@ -113,73 +65,195 @@ module.exports = {
             const statsActive = await LanguageManager.getTranslation(guildId, 'commands.help.stats_active', { count: activeServers });
             const statsUptime = await LanguageManager.getTranslation(guildId, 'commands.help.stats_uptime', { time: this.formatUptime(process.uptime()) });
 
-            embed.addFields({
-                name: t.statisticsTitle,
-                value: [
-                    statsServers,
-                    statsUsers,
-                    statsActive,
-                    statsUptime
-                ].join('\n'),
-                inline: true
-            });
+            const containerComponents = [
+                {
+                    type: 10,
+                    content: `**${t.title || '🎵 Music Bot Help'}**`
+                },
+                {
+                    type: 14,
+                    spacing_size: 1
+                },
+                {
+                    type: 10,
+                    content: t.description || 'Advanced Discord Music Bot with multi-platform support'
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.commandsTitle || '📝 Commands'}**`
+                },
+                {
+                    type: 10,
+                    content: Array.isArray(t.commandsList) ? t.commandsList.join('\n') : t.commandsList
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.buttonControlsTitle || '🎮 Button Controls'}**`
+                },
+                {
+                    type: 10,
+                    content: Array.isArray(t.buttonControlsList) ? t.buttonControlsList.join('\n') : t.buttonControlsList
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.platformsTitle || '🌐 Supported Platforms'}**`
+                },
+                {
+                    type: 10,
+                    content: Array.isArray(t.platformsList) ? t.platformsList.join('\n') : t.platformsList
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.featuresTitle || '✨ Features'}**`
+                },
+                {
+                    type: 10,
+                    content: Array.isArray(t.featuresList) ? t.featuresList.join('\n') : t.featuresList
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.howtoTitle || '📖 How to Use'}**`
+                },
+                {
+                    type: 10,
+                    content: Array.isArray(t.howtoList) ? t.howtoList.join('\n') : t.howtoList
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.statisticsTitle || '📊 Statistics'}**`
+                },
+                {
+                    type: 10,
+                    content: [
+                        statsServers || `📁 Servers: ${guilds}`,
+                        statsUsers || `👥 Users: ${users.toLocaleString()}`,
+                        statsActive || `🎵 Active Servers: ${activeServers}`,
+                        statsUptime || `⏱️ Uptime: ${this.formatUptime(process.uptime())}`
+                    ].join('\n')
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `**${t.linksTitle || '🔗 Links'}**`
+                },
+                {
+                    type: 10,
+                    content: [
+                        `[🌐 Website](${config.bot.website})`,
+                        `[💬 Support Server](${config.bot.supportServer})`,
+                        `[📄 Invite Bot](${config.bot.invite})`
+                    ].join('\n')
+                },
+                {
+                    type: 14,
+                    spacing_size: 2
+                },
+                {
+                    type: 10,
+                    content: `_${client.user.username} • ${t.footerText || 'Made with ❤️'}_`
+                }
+            ];
 
-            // Links
-            embed.addFields({
-                name: t.linksTitle,
-                value: [
-                    `[🌐 Website](${config.bot.website})`,
-                    `[💬 Support Server](${config.bot.supportServer})`,
-                    `[📄 Invite Bot](${config.bot.invite})`
-                ].join('\n'),
-                inline: true
-            });
+            if (client.user.displayAvatarURL()) {
+                containerComponents.splice(2, 0, {
+                    type: 11,
+                    url: client.user.displayAvatarURL()
+                });
+            }
 
-            embed.setFooter({
-                text: `${client.user.username} • ${t.footerText}`,
-                iconURL: client.user.displayAvatarURL()
-            });
-
-            // Buttons
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setLabel(t.buttonWebsite)
-                        .setURL(config.bot.website)
-                        .setStyle(ButtonStyle.Link),
-                    new ButtonBuilder()
-                        .setLabel(t.buttonSupport)
-                        .setURL(config.bot.supportServer)
-                        .setStyle(ButtonStyle.Link),
-                    new ButtonBuilder()
-                        .setCustomId('help_refresh')
-                        .setLabel(t.buttonRefresh)
-                        .setEmoji('🔄')
-                        .setStyle(ButtonStyle.Secondary)
-                );
+            const components = [
+                {
+                    type: 17,
+                    color: this.hexToInt(config.bot.embedColor),
+                    components: containerComponents
+                },
+                {
+                    type: 1,
+                    components: [
+                        {
+                            type: 2,
+                            style: ButtonStyle.Link,
+                            label: t.buttonWebsite || 'Website',
+                            url: config.bot.website
+                        },
+                        {
+                            type: 2,
+                            style: ButtonStyle.Link,
+                            label: t.buttonSupport || 'Support',
+                            url: config.bot.supportServer
+                        },
+                        {
+                            type: 2,
+                            style: ButtonStyle.Secondary,
+                            custom_id: 'help_refresh',
+                            label: t.buttonRefresh || 'Refresh',
+                            emoji: { name: '🔄' }
+                        }
+                    ]
+                }
+            ];
 
             await interaction.reply({
-                embeds: [embed],
-                components: [row]
+                flags: COMPONENTS_V2_FLAG,
+                components: components
             });
 
         } catch (error) {
+            console.error('Error in help command:', error);
 
             const guildId = interaction.guild.id;
             const errorTitle = await LanguageManager.getTranslation(guildId, 'commands.help.error_title');
             const errorDescription = await LanguageManager.getTranslation(guildId, 'commands.help.error_description');
 
-            const errorEmbed = new EmbedBuilder()
-                .setTitle(errorTitle)
-                .setDescription(errorDescription)
-                .setColor('#FF0000')
-                .setTimestamp();
+            const components = [
+                {
+                    type: 17,
+                    color: 0xFF0000,
+                    components: [
+                        {
+                            type: 10,
+                            content: `**${errorTitle || '❌ Error'}**`
+                        },
+                        {
+                            type: 10,
+                            content: errorDescription || 'An error occurred while loading the help menu!'
+                        }
+                    ]
+                }
+            ];
 
             try {
                 if (interaction.deferred && !interaction.replied) {
-                    await interaction.editReply({ embeds: [errorEmbed] });
+                    await interaction.editReply({ flags: COMPONENTS_V2_FLAG, components: components });
                 } else if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ embeds: [errorEmbed], flags: [1 << 6] });
+                    await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
                 }
             } catch (responseError) {
                 console.error('❌ Error sending help error response:', responseError);
@@ -199,5 +273,9 @@ module.exports = {
         } else {
             return `${minutes}m`;
         }
+    },
+
+    hexToInt(hex) {
+        return parseInt(hex.replace('#', ''), 16);
     }
 };

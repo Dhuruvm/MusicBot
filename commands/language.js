@@ -1,10 +1,10 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 const { JsonDB, Config } = require('node-json-db');
 const fs = require('fs');
 const path = require('path');
 const LanguageManager = require('../src/LanguageManager');
 
-// Initialize JSON database
+const COMPONENTS_V2_FLAG = 1 << 15;
 const db = new JsonDB(new Config('database/languages', true, true, '/'));
 
 module.exports = {
@@ -15,31 +15,39 @@ module.exports = {
 
     async execute(interaction, client) {
         try {
-            // Check if user has MANAGE_GUILD permission
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
                 const noPermissionTitle = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.errortitle');
                 const noPermissionDesc = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.permission_required');
                 
-                const errorEmbed = new EmbedBuilder()
-                    .setTitle(noPermissionTitle)
-                    .setDescription(noPermissionDesc)
-                    .setColor('#ff0000')
-                    .setTimestamp();
+                const components = [
+                    {
+                        type: 17,
+                        color: 0xFF0000,
+                        components: [
+                            {
+                                type: 10,
+                                content: `**${noPermissionTitle || '❌ Error'}**`
+                            },
+                            {
+                                type: 10,
+                                content: noPermissionDesc || 'You need Manage Server permission to use this command!'
+                            }
+                        ]
+                    }
+                ];
                 
-                return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                return await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
             }
 
             const guildId = interaction.guild.id;
 
-            // Get current language
-            let currentLang = 'en'; // Default language
+            let currentLang = 'en';
             try {
                 currentLang = await db.getData(`/servers/${guildId}/language`);
             } catch (error) {
                 // Language not set, use default
             }
 
-            // Get available languages
             const languagesPath = path.join(__dirname, '..', 'languages');
             const languageFiles = fs.readdirSync(languagesPath).filter(file => file.endsWith('.json'));
 
@@ -53,23 +61,40 @@ module.exports = {
                 });
             }
 
-            // Get current language data
             const currentLangData = languages.find(lang => lang.code === currentLang);
             const currentLangFile = JSON.parse(fs.readFileSync(path.join(languagesPath, `${currentLang}.json`), 'utf8'));
 
-            // Create embed
-            const embed = new EmbedBuilder()
-                .setTitle(currentLangFile.commands.language.title)
-                .setDescription(currentLangFile.commands.language.select)
-                .setColor('#0099ff')
-                .setTimestamp()
-                .addFields({
-                    name: currentLangFile.commands.language.current,
-                    value: `${currentLangData.flag} ${currentLangData.name}`,
-                    inline: true
-                });
+            const containerComponents = [
+                {
+                    type: 10,
+                    content: `**${currentLangFile.commands.language.title || '🌐 Language Settings'}**`
+                },
+                {
+                    type: 14,
+                    spacing_size: 1
+                },
+                {
+                    type: 10,
+                    content: currentLangFile.commands.language.select || 'Select a language for this server:'
+                },
+                {
+                    type: 14,
+                    spacing_size: 1
+                },
+                {
+                    type: 10,
+                    content: `**${currentLangFile.commands.language.current || 'Current Language'}:** ${currentLangData.flag} ${currentLangData.name}`
+                }
+            ];
 
-            // Create buttons
+            const components = [
+                {
+                    type: 17,
+                    color: 0x0099FF,
+                    components: containerComponents
+                }
+            ];
+
             const buttons = [];
             const rows = [];
 
@@ -83,103 +108,157 @@ module.exports = {
 
                 buttons.push(button);
 
-                // Create rows (max 5 buttons per row)
                 if (buttons.length === 5 || i === languages.length - 1) {
                     const row = new ActionRowBuilder().addComponents(...buttons);
                     rows.push(row);
-                    buttons.length = 0; // Clear array
+                    buttons.length = 0;
                 }
             }
 
+            for (const row of rows) {
+                components.push({
+                    type: 1,
+                    components: row.components.map(btn => ({
+                        type: 2,
+                        style: btn.data.style,
+                        custom_id: btn.data.custom_id,
+                        label: btn.data.label,
+                        emoji: btn.data.emoji
+                    }))
+                });
+            }
+
             await interaction.reply({
-                embeds: [embed],
-                components: rows
+                flags: COMPONENTS_V2_FLAG,
+                components: components
             });
 
         } catch (error) {
+            console.error('Error in language command:', error);
 
             let errorDes = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.error2');
             let errorTitle = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.errortitle');
 
-            const errorEmbed = new EmbedBuilder()
-                .setTitle(errorTitle)
-                .setDescription(errorDes)
-                .setColor('#ff0000')
-                .setTimestamp();
+            const components = [
+                {
+                    type: 17,
+                    color: 0xFF0000,
+                    components: [
+                        {
+                            type: 10,
+                            content: `**${errorTitle || '❌ Error'}**`
+                        },
+                        {
+                            type: 10,
+                            content: errorDes || 'An error occurred while loading language settings!'
+                        }
+                    ]
+                }
+            ];
 
             if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ embeds: [errorEmbed] });
+                await interaction.editReply({ flags: COMPONENTS_V2_FLAG, components: components });
             } else {
-                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
             }
         }
     },
 
-    // Handle button interactions
     async handleLanguageButton(interaction) {
         try {
-            // Check if user has MANAGE_GUILD permission
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
                 const noPermissionTitle = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.errortitle');
-                const noPermissionDesc = '❌ Bu butonu kullanmak için **Sunucuyu Yönet** yetkisine sahip olmalısın!';
+                const noPermissionDesc = '❌ You need Manage Server permission to use this button!';
                 
-                const errorEmbed = new EmbedBuilder()
-                    .setTitle(noPermissionTitle)
-                    .setDescription(noPermissionDesc)
-                    .setColor('#ff0000')
-                    .setTimestamp();
+                const components = [
+                    {
+                        type: 17,
+                        color: 0xFF0000,
+                        components: [
+                            {
+                                type: 10,
+                                content: `**${noPermissionTitle || '❌ Error'}**`
+                            },
+                            {
+                                type: 10,
+                                content: noPermissionDesc
+                            }
+                        ]
+                    }
+                ];
                 
-                return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                return await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
             }
 
             const guildId = interaction.guild.id;
             const selectedLang = interaction.customId.replace('language_', '');
 
-            // Save language preference using LanguageManager (this will update cache automatically)
             const success = await LanguageManager.setServerLanguage(guildId, selectedLang);
 
             if (!success) {
                 throw new Error('Failed to save language preference');
             }
 
-            // Get selected language data
             const selectedLangData = await LanguageManager.getLanguageData(selectedLang);
 
             if (!selectedLangData) {
                 throw new Error('Invalid language selected');
             }
 
-            // Create success embed using new language
             const successTitle = await LanguageManager.getTranslation(guildId, 'commands.language.changed');
             const successDescription = await LanguageManager.getTranslation(guildId, 'commands.language.changed_desc', {
                 language: `${selectedLangData.language.flag} ${selectedLangData.language.name}`
             });
 
-            const successEmbed = new EmbedBuilder()
-                .setTitle(successTitle)
-                .setDescription(successDescription)
-                .setColor('#00ff00')
-                .setTimestamp();
+            const components = [
+                {
+                    type: 17,
+                    color: 0x00FF00,
+                    components: [
+                        {
+                            type: 10,
+                            content: `**${successTitle || '✅ Language Changed'}**`
+                        },
+                        {
+                            type: 10,
+                            content: successDescription || `Language has been changed to ${selectedLangData.language.flag} ${selectedLangData.language.name}`
+                        }
+                    ]
+                }
+            ];
 
             await interaction.update({
-                embeds: [successEmbed],
-                components: []
+                flags: COMPONENTS_V2_FLAG,
+                components: components
             });
 
         } catch (error) {
+            console.error('Error handling language button:', error);
 
             let errorDes = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.error');
             let errorTitle = await LanguageManager.getTranslation(interaction.guild.id, 'commands.language.errortitle');
-            const errorEmbed = new EmbedBuilder()
-                .setTitle(errorTitle)
-                .setDescription(errorDes)
-                .setColor('#ff0000')
-                .setTimestamp();
+            
+            const components = [
+                {
+                    type: 17,
+                    color: 0xFF0000,
+                    components: [
+                        {
+                            type: 10,
+                            content: `**${errorTitle || '❌ Error'}**`
+                        },
+                        {
+                            type: 10,
+                            content: errorDes || 'An error occurred while changing the language!'
+                        }
+                    ]
+                }
+            ];
 
             if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ embeds: [errorEmbed] });
+                await interaction.editReply({ flags: COMPONENTS_V2_FLAG, components: components });
             } else {
-                await interaction.update({ embeds: [errorEmbed], components: [] });
+                await interaction.update({ flags: COMPONENTS_V2_FLAG, components: components });
             }
         }
     }

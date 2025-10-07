@@ -1,6 +1,8 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events } = require('discord.js');
 const config = require('../config');
 const LanguageManager = require('../src/LanguageManager');
+
+const COMPONENTS_V2_FLAG = 1 << 15;
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -12,15 +14,13 @@ module.exports = {
         const member = interaction.member;
 
         try {
-            // Handle select menus
             if (interaction.isStringSelectMenu()) {
-                if (interaction.customId.startsWith('autoplay_genre:')) {
+                if (interaction.customId.startsWith('autoplay_genre_')) {
                     await this.handleAutoplayGenre(interaction, client);
                     return;
                 }
             }
 
-            // Handle modals
             switch (interaction.customId) {
                 case 'volume_modal':
                     await this.handleVolumeModal(interaction, client);
@@ -28,18 +28,20 @@ module.exports = {
 
                 default:
                     await interaction.reply({
-                        content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.unknown_modal'),
+                        content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.unknown_modal') || '❌ Unknown modal!',
                         ephemeral: true
                     });
             }
         } catch (error) {
+            console.error('Error in modal handler:', error);
             if (!interaction.replied && !interaction.deferred) {
                 try {
                     await interaction.reply({
-                        content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.processing_error'),
+                        content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.processing_error') || '❌ An error occurred!',
                         ephemeral: true
                     });
                 } catch (replyError) {
+                    console.error('Error sending error reply:', replyError);
                 }
             }
         }
@@ -49,85 +51,94 @@ module.exports = {
         const guild = interaction.guild;
         const member = interaction.member;
 
-        // Check if user is in a voice channel
         if (!member.voice.channel) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.voice_channel_required'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.voice_channel_required') || '❌ You need to be in a voice channel!',
                 flags: [1 << 6]
             });
         }
 
-        // Get music player
         const player = client.players.get(guild.id);
         if (!player) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.no_music_playing'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.no_music_playing') || '❌ No music is currently playing!',
                 flags: [1 << 6]
             });
         }
 
-        // Check if user is in the same voice channel as bot
         if (player.voiceChannel.id !== member.voice.channel.id) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.different_voice_channel'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.different_voice_channel') || '❌ You need to be in the same voice channel!',
                 flags: [1 << 6]
             });
         }
 
         const selectedGenre = interaction.values[0];
-        
-        // Enable autoplay with selected genre
         player.autoplay = selectedGenre;
 
-        const genreName = await LanguageManager.getTranslation(guild?.id, `genres.${selectedGenre}`);
-        const embed = new EmbedBuilder()
-            .setTitle('🎲 ' + await LanguageManager.getTranslation(guild?.id, 'buttonhandler.autoplay_enabled'))
-            .setDescription(
-                (await LanguageManager.getTranslation(guild?.id, 'buttonhandler.autoplay_enabled_desc'))
-                    .replace('{genre}', genreName)
-            )
-            .setColor(config.bot.embedColor)
-            .setTimestamp()
-            .addFields({
-                name: await LanguageManager.getTranslation(guild?.id, 'buttonhandler.changed_by'),
-                value: `${member}`,
-                inline: true
-            });
+        const genreName = await LanguageManager.getTranslation(guild?.id, `genres.${selectedGenre}`) || selectedGenre;
+        const title = await LanguageManager.getTranslation(guild?.id, 'buttonhandler.autoplay_enabled') || 'Autoplay Enabled';
+        const description = (await LanguageManager.getTranslation(guild?.id, 'buttonhandler.autoplay_enabled_desc') || 'Autoplay has been enabled with genre: {genre}').replace('{genre}', genreName);
+        const changedBy = await LanguageManager.getTranslation(guild?.id, 'buttonhandler.changed_by') || 'Changed by';
 
-        await interaction.reply({ embeds: [embed], flags: [1 << 6] });
+        const components = [
+            {
+                type: 17,
+                color: this.hexToInt(config.bot.embedColor),
+                components: [
+                    {
+                        type: 10,
+                        content: `🎲 **${title}**`
+                    },
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: description
+                    },
+                    {
+                        type: 14,
+                        spacing_size: 1
+                    },
+                    {
+                        type: 10,
+                        content: `**${changedBy}:** ${member}`
+                    }
+                ]
+            }
+        ];
 
-        // Update the main embed to show autoplay is enabled
+        await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
+
         if (client.musicEmbedManager) {
             await client.musicEmbedManager.updateNowPlayingEmbed(player);
         }
     },
 
     async handleVolumeModal(interaction, client) {
-
         const guild = interaction.guild;
         const member = interaction.member;
 
-        // Check if user is in a voice channel
         if (!member.voice.channel) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.voice_channel_required'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.voice_channel_required') || '❌ You need to be in a voice channel!',
                 ephemeral: true
             });
         }
 
-        // Get music player
         const player = client.players.get(guild.id);
         if (!player) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.no_music_playing'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.no_music_playing') || '❌ No music is currently playing!',
                 ephemeral: true
             });
         }
 
-        // Check if user is in the same voice channel as bot
         if (player.voiceChannel.id !== member.voice.channel.id) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.same_channel_required'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.same_channel_required') || '❌ You need to be in the same voice channel!',
                 ephemeral: true
             });
         }
@@ -135,41 +146,67 @@ module.exports = {
         const volumeInput = interaction.fields.getTextInputValue('volume_input');
         const volume = parseInt(volumeInput);
 
-        // Validate volume
         if (isNaN(volume) || volume < 0 || volume > 100) {
             return await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.invalid_volume'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.invalid_volume') || '❌ Volume must be between 0 and 100!',
                 ephemeral: true
             });
         }
 
-        // Set volume
         const success = player.setVolume(volume);
 
         if (success) {
-            const embed = new EmbedBuilder()
-                .setTitle(await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_changed_title'))
-                .setDescription(await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_changed_desc', { volume }))
-                .setColor(config.bot.embedColor)
-                .setTimestamp()
-                .addFields({
-                    name: await LanguageManager.getTranslation(guild?.id, 'modalhandler.set_by'),
-                    value: `${member}`,
-                    inline: true
-                });
-
-            // Visual volume bar
+            const title = await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_changed_title') || 'Volume Changed';
+            const description = await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_changed_desc', { volume }) || `Volume has been set to ${volume}%`;
+            const setBy = await LanguageManager.getTranslation(guild?.id, 'modalhandler.set_by') || 'Set by';
+            const level = await LanguageManager.getTranslation(guild?.id, 'modalhandler.level') || 'Level';
             const volumeBar = this.createVolumeBar(volume);
-            embed.addFields({
-                name: await LanguageManager.getTranslation(guild?.id, 'modalhandler.level'),
-                value: volumeBar,
-                inline: false
-            });
 
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            const components = [
+                {
+                    type: 17,
+                    color: this.hexToInt(config.bot.embedColor),
+                    components: [
+                        {
+                            type: 10,
+                            content: `🔊 **${title}**`
+                        },
+                        {
+                            type: 14,
+                            spacing_size: 1
+                        },
+                        {
+                            type: 10,
+                            content: description
+                        },
+                        {
+                            type: 14,
+                            spacing_size: 1
+                        },
+                        {
+                            type: 10,
+                            content: `**${setBy}:** ${member}`
+                        },
+                        {
+                            type: 14,
+                            spacing_size: 1
+                        },
+                        {
+                            type: 10,
+                            content: `**${level}:** ${volumeBar}`
+                        }
+                    ]
+                }
+            ];
+
+            await interaction.reply({ flags: COMPONENTS_V2_FLAG | (1 << 6), components: components });
+
+            if (client.musicEmbedManager) {
+                await client.musicEmbedManager.updateNowPlayingEmbed(player);
+            }
         } else {
             await interaction.reply({
-                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_error'),
+                content: await LanguageManager.getTranslation(guild?.id, 'modalhandler.volume_error') || '❌ Failed to set volume!',
                 ephemeral: true
             });
         }
@@ -182,5 +219,9 @@ module.exports = {
 
         const bar = '▓'.repeat(filledBars) + '░'.repeat(emptyBars);
         return `\`${bar}\` ${volume}%`;
+    },
+
+    hexToInt(hex) {
+        return parseInt(hex.replace('#', ''), 16);
     }
 };

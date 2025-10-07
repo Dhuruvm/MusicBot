@@ -30,7 +30,7 @@ class MusicEmbedManager {
 
         const components = [
             {
-                type: 15,
+                type: 17,
                 color: this.hexToInt(player.guild.members.me.displayHexColor || '#5865F2'),
                 components: [
                     {
@@ -142,7 +142,7 @@ class MusicEmbedManager {
     createQueueEndedComponents(player) {
         const components = [
             {
-                type: 15,
+                type: 17,
                 color: this.hexToInt('#99AAB5'),
                 components: [
                     {
@@ -181,7 +181,7 @@ class MusicEmbedManager {
         if (queue.length === 0) {
             return [
                 {
-                    type: 15,
+                    type: 17,
                     color: this.hexToInt('#99AAB5'),
                     components: [
                         {
@@ -205,7 +205,7 @@ class MusicEmbedManager {
 
         const components = [
             {
-                type: 15,
+                type: 17,
                 color: this.hexToInt(player.guild.members.me.displayHexColor || '#5865F2'),
                 components: [
                     {
